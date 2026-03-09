@@ -1,0 +1,22 @@
+whisper:
+  model_size: large-v3   # tiny / base / small / medium / large-v2 / large-v3
+  language: ru            # язык аудио (ru, en, de, etc.)
+  device: auto            # auto / cuda / cpu  (auto = CUDA если есть, иначе CPU)
+  compute_type: auto      # auto / float16 (CUDA) / int8 (CPU)
+
+audio:
+  formats:
+    - mp3
+    - wav
+    - m4a
+    - ogg
+    - mp4
+    - mkv
+    - flac
+
+# Diarization settings (optional, used with --diarize flag)
+diarization:
+  # num_speakers: 2        # Точное число спикеров (лучшая точность)
+  # min_speakers: 2        # Минимум спикеров (если точное число неизвестно)
+  # max_speakers: 5        # Максимум спикеров
+  model: "pyannote/speaker-diarization-3.1"

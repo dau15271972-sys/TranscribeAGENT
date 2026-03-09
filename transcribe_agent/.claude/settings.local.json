@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(winget install Gyan.FFmpeg --accept-package-agreements --accept-source-agreements)",
+      "Bash(python -m venv .venv)"
+    ]
+  }
+}

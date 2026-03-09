@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+.hf_token*
+*.log
+ffprobe.exe

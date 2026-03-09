@@ -1,0 +1,1 @@
+print("ПРОВЕРКА УСТАНОВКИ") & echo print("=" * 50) & echo print("\nTorch version:", torch.__version__) & echo print("CUDA available:", torch.cuda.is_available()) & echo print("\nWhisper и Pyannote импортированы успешно!") & echo print("\n" + "=" * 50) & echo print("ВСЁ ГОТОВО!") & echo input("\nНажми Enter для выхода...")) 

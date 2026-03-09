@@ -1,0 +1,6 @@
+pyyaml>=6.0
+faster-whisper>=1.0.0
+# whisperx — for diarization mode (--diarize)
+# Install separately: pip install whisperx
+# torch — install with CUDA for GPU acceleration:
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121

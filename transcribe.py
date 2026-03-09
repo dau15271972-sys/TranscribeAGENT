@@ -5,6 +5,8 @@ Modes:
   transcribe.py file.mp3              — plain transcription (fast)
   transcribe.py file.mp3 --diarize    — with speaker separation (slower, needs pyannote)
   transcribe.py file.mp3 --diarize --speakers 3 --meeting "Custdev"  — full meeting protocol
+  transcribe.py file.mp3 --diarize --speaker-names "Виталий (консультант), Анна (клиент)"
+                                      — pre-define speaker names, assign after diarization
   transcribe.py *.m4a --diarize       — batch: process multiple files sequentially
 """
 
@@ -67,6 +69,10 @@ def main():
     parser.add_argument(
         "--names", "-n", default=None,
         help='Speaker names JSON: \'{"SPEAKER_00": "Name (role)"}\' or path to .json file'
+    )
+    parser.add_argument(
+        "--speaker-names", default=None,
+        help='Pre-defined speaker names (comma-separated): "Виталий (консультант), Анна (клиент)"'
     )
     parser.add_argument(
         "--no-interactive", action="store_true",
@@ -248,6 +254,31 @@ def _run_diarized(filepath: Path, config: dict, project_dir: Path, args):
     log()
 
 
+    # === PRE-STAGE: Collect speaker names before transcription ===
+    # Ask for speaker names upfront (skip if already provided via CLI)
+    if not args.speaker_names and not args.names and not args.no_interactive:
+        print()
+        print("=" * 50)
+        print("  ИМЕНА СПИКЕРОВ")
+        print("=" * 50)
+        print()
+        print("  Введите имена участников через запятую")
+        print("  (или нажмите Enter чтобы пропустить):")
+        print()
+        print("  Формат: Имя (роль), Имя (роль)")
+        print("  Пример: Виталий (консультант), Анна (клиент)")
+        print()
+        try:
+            pre_names_input = input("  > ").strip()
+        except (EOFError, KeyboardInterrupt):
+            pre_names_input = ""
+        if pre_names_input:
+            args.speaker_names = pre_names_input
+            print()
+            print(f"  Сохранено: {pre_names_input}")
+            print("  Имена будут сопоставлены после диаризации.")
+        print()
+
     # === STAGE 2: WhisperX (transcribe + align + diarize) ===
     log(f"\033[1m[2/4] WhisperX pipeline...\033[0m")
 
@@ -352,11 +383,11 @@ def _resolve_speaker_map(
 ) -> dict:
     """Resolve speaker names from CLI args or interactive prompt.
 
-    Priority: --names flag > interactive prompt > default (SPEAKER_XX)
+    Priority: --names flag > --speaker-names (pre-defined list) > interactive prompt > default
     """
     speaker_map = {}
 
-    # 1. From --names flag
+    # 1. From --names flag (direct SPEAKER_XX → name mapping)
     if args.names:
         names_input = args.names.strip()
         # Check if it's a JSON file path
@@ -370,21 +401,67 @@ def _resolve_speaker_map(
             except json.JSONDecodeError:
                 log(f"  Warning: could not parse --names JSON, using defaults")
 
-    # 2. Interactive prompt (if no names provided and not disabled)
-    if not speaker_map and not args.no_interactive:
-        # Only if running in terminal (not batch/pipe)
-        if sys.stdin.isatty():
-            from transcribe_agent.protocol import detect_speakers_interactive
-            speaker_map = detect_speakers_interactive(
-                unique_speakers, transcript_segments, diarization_segments
+    # 2. From --speaker-names (pre-defined list → interactive assignment after diarization)
+    if not speaker_map and args.speaker_names:
+        predefined = _parse_speaker_names(args.speaker_names)
+        if predefined:
+            from transcribe_agent.protocol import assign_speakers_from_list
+            speaker_map = assign_speakers_from_list(
+                unique_speakers, predefined, transcript_segments, diarization_segments
             )
+        if not speaker_map and predefined:
+            # Non-interactive fallback: assign in order
+            for i, spk in enumerate(sorted(unique_speakers)):
+                if i < len(predefined):
+                    speaker_map[spk] = predefined[i]
+                else:
+                    speaker_map[spk] = spk
 
-    # 3. Default: "Спикер 1", "Спикер 2", ...
+    # 3. Interactive prompt (if no names provided and not disabled)
+    if not speaker_map and not args.no_interactive:
+        from transcribe_agent.protocol import detect_speakers_interactive
+        speaker_map = detect_speakers_interactive(
+            unique_speakers, transcript_segments, diarization_segments
+        )
+
+    # 4. Default: "Спикер 1", "Спикер 2", ...
     if not speaker_map:
         for i, spk in enumerate(sorted(unique_speakers), 1):
             speaker_map[spk] = f"Спикер {i}"
 
     return speaker_map
+
+
+def _parse_speaker_names(names_str: str) -> list:
+    """Parse comma-separated speaker names into a list.
+
+    Supports formats:
+        "Виталий (консультант), Анна (клиент)"
+        "Виталий, Анна, Пётр"
+
+    Also accepts a path to a .txt file with one name per line.
+    """
+    names_str = names_str.strip()
+
+    # Check if it's a file path
+    if Path(names_str).exists() and Path(names_str).suffix in (".txt", ".json"):
+        filepath = Path(names_str)
+        if filepath.suffix == ".json":
+            with open(filepath, encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    return [n.strip() for n in data if n.strip()]
+        else:
+            text = filepath.read_text(encoding="utf-8")
+            return [line.strip() for line in text.splitlines() if line.strip()]
+
+    # Parse comma-separated string
+    names = []
+    for part in names_str.split(","):
+        name = part.strip()
+        if name:
+            names.append(name)
+    return names
 
 
 if __name__ == "__main__":

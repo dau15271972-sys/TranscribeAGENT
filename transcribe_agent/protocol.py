@@ -363,3 +363,137 @@ def detect_speakers_interactive(
 
     log("")
     return speaker_map
+
+
+def _get_speaker_quotes(
+    speaker: str,
+    transcript_segments: list,
+    diarization_segments: list,
+    max_quotes: int = 3,
+) -> list:
+    """Extract sample quotes for a speaker from transcript/diarization segments."""
+    quotes = []
+    if transcript_segments and diarization_segments:
+        spk_diar = [d for d in diarization_segments if d["speaker"] == speaker]
+        for dseg in spk_diar:
+            if len(quotes) >= max_quotes:
+                break
+            d_start = dseg["start"]
+            d_end = dseg["end"]
+            for tseg in transcript_segments:
+                overlap_start = max(tseg["start"], d_start)
+                overlap_end = min(tseg["end"], d_end)
+                if overlap_end > overlap_start:
+                    text = tseg["text"].strip()
+                    if len(text) > 15:
+                        preview = text[:120]
+                        if len(text) > 120:
+                            preview += "..."
+                        quotes.append(preview)
+                        break
+    return quotes
+
+
+def assign_speakers_from_list(
+    unique_speakers: list,
+    predefined_names: list,
+    transcript_segments: list = None,
+    diarization_segments: list = None,
+) -> dict:
+    """Assign pre-defined speaker names to detected SPEAKER_XX labels.
+
+    Shows sample quotes for each detected speaker and lets the user
+    pick from the pre-defined list of names.
+
+    Args:
+        unique_speakers: ["SPEAKER_00", "SPEAKER_01", ...]
+        predefined_names: ["Виталий (консультант)", "Анна (клиент)"]
+        transcript_segments: whisper segments with timestamps + text
+        diarization_segments: pyannote segments with timestamps + speaker
+
+    Returns speaker_map: {"SPEAKER_00": "Виталий (консультант)", ...}
+    """
+    print()
+    print("=" * 50)
+    print("  СОПОСТАВЛЕНИЕ СПИКЕРОВ")
+    print("=" * 50)
+    print()
+    print("  Заранее указанные участники:")
+    for i, name in enumerate(predefined_names, 1):
+        print(f"    {i}. {name}")
+    print()
+    print("-" * 50)
+    print()
+
+    # Show quotes for each detected speaker
+    for spk in sorted(unique_speakers):
+        quotes = _get_speaker_quotes(
+            spk, transcript_segments, diarization_segments
+        )
+        print(f"  {spk} говорит, например:")
+        if quotes:
+            for q in quotes:
+                print(f'    "{q}"')
+        else:
+            print("    (короткие реплики, недостаточно текста для примера)")
+        print()
+
+    print("-" * 50)
+    print()
+    print("  Для каждого спикера введите номер из списка участников,")
+    print("  или имя вручную, или нажмите Enter чтобы пропустить.")
+    print()
+
+    speaker_map = {}
+    used_names = set()
+
+    for spk in sorted(unique_speakers):
+        # Show available names (not yet assigned)
+        available = [
+            (i, name) for i, name in enumerate(predefined_names, 1)
+            if name not in used_names
+        ]
+        if available:
+            avail_str = ", ".join(f"{i}-{n}" for i, n in available)
+            print(f"  Доступные: {avail_str}")
+
+        try:
+            user_input = input(f"  {spk} → ").strip()
+        except (EOFError, KeyboardInterrupt):
+            user_input = ""
+
+        if user_input:
+            # Check if user entered a number
+            try:
+                idx = int(user_input)
+                if 1 <= idx <= len(predefined_names):
+                    chosen = predefined_names[idx - 1]
+                    speaker_map[spk] = chosen
+                    used_names.add(chosen)
+                    print(f"    → {chosen}")
+                else:
+                    speaker_map[spk] = user_input
+                    print(f"    → {user_input}")
+            except ValueError:
+                # Not a number — use as literal name
+                speaker_map[spk] = user_input
+                # Check if it matches a predefined name prefix
+                for name in predefined_names:
+                    if name.lower().startswith(user_input.lower()):
+                        speaker_map[spk] = name
+                        used_names.add(name)
+                        print(f"    → {name}")
+                        break
+                else:
+                    print(f"    → {user_input}")
+        else:
+            speaker_map[spk] = spk
+        print()
+
+    # Summary
+    print("  Итого:")
+    for spk, name in speaker_map.items():
+        print(f"    {spk} → {name}")
+    print()
+
+    return speaker_map
